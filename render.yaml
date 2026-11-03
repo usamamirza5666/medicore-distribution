@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: medicore
+    runtime: node
+    plan: starter
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/status
+    disk:
+      name: medicore-data
+      mountPath: /var/data/medicore
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: "1"
+      - key: MEDICORE_DATA_DIR
+        value: /var/data/medicore
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: SETUP_TOKEN
+        sync: false
