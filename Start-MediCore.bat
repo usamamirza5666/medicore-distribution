@@ -9,7 +9,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-node -e "require('express'); require('better-sqlite3')" >nul 2>nul
+node -e "require('express'); require('better-sqlite3'); require('pg')" >nul 2>nul
 if errorlevel 1 (
   echo Installing MediCore dependencies...
   call npm install
