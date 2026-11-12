@@ -1,1 +1,10 @@
+<<<<<<< HEAD
 .vercel
+=======
+node_modules/
+data/
+.env
+.env.*
+!.env.example
+.vercel/
+>>>>>>> 2e0fb5e9117e30d26260d7b3a71d85923f3ce068
