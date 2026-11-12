@@ -1,6 +1,6 @@
 # MedSupply
 
-MedSupply is a browser-based starter workspace for medicine distribution operations. It includes a medicine catalog, batch and expiry tracking, customer orders, returns quarantine and inspection, supplier contacts, low-stock and expiry reports, and CSV export.
+MedSupply is a browser-based starter workspace for Mirza Brothers' medicine distribution operations. It includes the company's contact details, a medicine catalog, batch and expiry tracking, customer orders with printable order slips and invoices, returns quarantine and inspection, supplier contacts, low-stock and expiry reports, and CSV export.
 
 ## Run it
 
@@ -13,3 +13,5 @@ Changes are stored in the browser's local storage on that device. Use **Reset sa
 Order fulfillment checks available in-date stock and allocates from the earliest-expiring batches first. Expired stock remains visible in batch and expiry reports but is excluded from available inventory.
 
 Customer returns are logged against their original batch and held in quarantine without changing available stock. Restocking requires documented inspection notes and is limited to in-date batches; returns marked not restockable do not change inventory. The CSV report includes return and disposition records. This workflow is an operational aid, not a substitute for required quality, traceability, or regulatory procedures.
+
+Print an order slip from the Orders page at any order status. Invoices are available after fulfillment; enter item prices in PKR, and enter a tax amount manually only when applicable. The app does not calculate tax rules.

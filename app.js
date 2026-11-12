@@ -75,6 +75,7 @@ let toastTimer;
 
 const content = document.getElementById("app-content");
 const modalRoot = document.getElementById("modal-root");
+const printRoot = document.getElementById("print-root");
 const toast = document.getElementById("toast");
 const todayLabel = document.getElementById("today-label");
 todayLabel.textContent = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date());
@@ -222,8 +223,8 @@ function renderOrders() {
   const orders = [...data.orders].filter((order) => `${order.id} ${order.customer} ${order.status}`.toLowerCase().includes(searchTerm)).sort((a, b) => b.date.localeCompare(a.date));
   return `${pageHeading("CUSTOMER FULFILLMENT", "Orders", "Create customer orders and fulfill them against available batches.", button("+ New order", "new-order"))}
     <div class="toolbar"><div class="search-box"><input data-search placeholder="Search order or customer" value="${escapeHtml(searchTerm)}" aria-label="Search orders"></div><span class="badge neutral">${orders.length} orders</span></div>
-    <section class="table-panel"><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>CUSTOMER</th><th>ITEMS</th><th>ORDER DATE</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
-      ${orders.length ? orders.map((order) => `<tr><td class="medicine-name">${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer)}</td><td>${order.items.map((item) => `${escapeHtml(medicineById(item.medicineId)?.name || "Removed product")} × ${Number(item.quantity)}`).join("<br>")}</td><td>${formatDate(order.date)}</td><td><span class="badge ${order.status === "Pending" ? "warning" : ""}">${escapeHtml(order.status)}</span></td><td>${order.status === "Pending" ? `<button class="button secondary small" data-action="fulfill-order" data-id="${escapeHtml(order.id)}">Fulfill</button>` : "—"}</td></tr>`).join("") : tableEmpty("Create an order to begin customer fulfillment.", 6)}
+    <section class="table-panel"><div class="table-wrap"><table><thead><tr><th>ORDER</th><th>CUSTOMER</th><th>ITEMS</th><th>ORDER DATE</th><th>STATUS</th><th>FULFILLMENT</th><th>PRINT</th></tr></thead><tbody>
+      ${orders.length ? orders.map((order) => `<tr><td class="medicine-name">${escapeHtml(order.id)}</td><td>${escapeHtml(order.customer)}</td><td>${order.items.map((item) => `${escapeHtml(medicineById(item.medicineId)?.name || "Removed product")} × ${Number(item.quantity)}`).join("<br>")}</td><td>${formatDate(order.date)}</td><td><span class="badge ${order.status === "Pending" ? "warning" : ""}">${escapeHtml(order.status)}</span></td><td>${order.status === "Pending" ? `<button class="button secondary small" data-action="fulfill-order" data-id="${escapeHtml(order.id)}">Fulfill</button>` : "—"}</td><td><button class="button ghost small" data-action="print-slip" data-id="${escapeHtml(order.id)}">Order slip</button>${order.status === "Fulfilled" ? ` <button class="button ghost small" data-action="invoice" data-id="${escapeHtml(order.id)}">Invoice</button>` : ""}</td></tr>`).join("") : tableEmpty("Create an order to begin customer fulfillment.", 7)}
     </tbody></table></div></section>`;
 }
 
@@ -425,6 +426,88 @@ function openOrderModal() {
   });
 }
 
+function printDocument(title, markup) {
+  printRoot.innerHTML = `<article class="print-document">${markup}</article>`;
+  document.title = `${title} | Mirza Brothers`;
+  window.addEventListener("afterprint", () => { printRoot.innerHTML = ""; }, { once: true });
+  window.print();
+  document.title = "Mirza Brothers | MedSupply distribution workspace";
+}
+
+function printOrderSlip(orderId) {
+  const order = data.orders.find((item) => item.id === orderId);
+  if (!order) return;
+  const rows = order.items.map((item) => `<tr><td>${escapeHtml(medicineById(item.medicineId)?.name || "Removed product")}</td><td>${Number(item.quantity).toLocaleString()}</td></tr>`).join("");
+  printDocument(`Order slip ${order.id}`, `
+    <header class="print-header">
+      <div><h1>Mirza Brothers</h1><p>Main GT Road, Dina</p><p>Phone: 03455675307</p></div>
+      <div class="print-meta"><h2>Order slip</h2><p>Order: ${escapeHtml(order.id)}</p><p>Date: ${formatDate(order.date)}</p><p>Status: ${escapeHtml(order.status)}</p></div>
+    </header>
+    <p class="print-customer"><strong>Customer:</strong> ${escapeHtml(order.customer)}</p>
+    <table class="print-table"><thead><tr><th>Item</th><th>Quantity</th></tr></thead><tbody>${rows}</tbody></table>`);
+}
+
+function openInvoiceModal(orderId) {
+  const order = data.orders.find((item) => item.id === orderId);
+  if (!order || order.status !== "Fulfilled") {
+    showToast("Fulfill the order before preparing an invoice.", true);
+    return;
+  }
+  const priceFields = order.items.map((item, index) => {
+    const name = medicineById(item.medicineId)?.name || "Removed product";
+    const price = item.unitPrice !== undefined && item.unitPrice !== null && Number.isFinite(Number(item.unitPrice))
+      ? ` value="${Number(item.unitPrice)}"`
+      : "";
+    return field(`${name} — unit price (PKR)`, `price-${index}`, "number", true, `min="0" step="0.01"${price}`);
+  }).join("");
+  const taxAmount = Number.isFinite(Number(order.taxAmount)) ? Number(order.taxAmount) : 0;
+  const fields = `${priceFields}<div class="field full"><label for="field-taxAmount">Tax amount (PKR, optional)</label><input id="field-taxAmount" name="taxAmount" type="number" min="0" step="0.01" value="${taxAmount}"><small class="form-help">Tax is entered manually when applicable; the app does not calculate tax rules.</small></div>`;
+  openModal("Prepare invoice", "Enter each unit price in PKR. You can update these values before printing again.", fields, (form) => {
+    const prices = order.items.map((item, index) => {
+      const rawPrice = String(form.get(`price-${index}`)).trim();
+      return rawPrice === "" ? NaN : Number(rawPrice);
+    });
+    const rawTaxAmount = String(form.get("taxAmount")).trim();
+    const nextTaxAmount = rawTaxAmount === "" ? 0 : Number(rawTaxAmount);
+    if (prices.some((price) => !Number.isFinite(price) || price < 0)) {
+      formError("Enter a valid non-negative unit price for every item.");
+      return false;
+    }
+    if (!Number.isFinite(nextTaxAmount) || nextTaxAmount < 0) {
+      formError("Enter a valid non-negative tax amount or leave it blank.");
+      return false;
+    }
+    const previousPrices = order.items.map((item) => item.unitPrice);
+    const previousTaxAmount = order.taxAmount;
+    const previousInvoiceDate = order.invoiceDate;
+    order.items.forEach((item, index) => { item.unitPrice = prices[index]; });
+    order.taxAmount = nextTaxAmount;
+    order.invoiceDate = order.invoiceDate || dateOffset(0);
+    if (!saveData()) {
+      order.items.forEach((item, index) => { item.unitPrice = previousPrices[index]; });
+      order.taxAmount = previousTaxAmount;
+      order.invoiceDate = previousInvoiceDate;
+      return false;
+    }
+    const subtotal = order.items.reduce((total, item) => total + Number(item.quantity) * Number(item.unitPrice), 0);
+    const total = subtotal + nextTaxAmount;
+    const rows = order.items.map((item) => {
+      const medicine = medicineById(item.medicineId);
+      const lineTotal = Number(item.quantity) * Number(item.unitPrice);
+      return `<tr><td>${escapeHtml(medicine?.name || "Removed product")}</td><td>${Number(item.quantity).toLocaleString()}</td><td>PKR ${Number(item.unitPrice).toFixed(2)}</td><td>PKR ${lineTotal.toFixed(2)}</td></tr>`;
+    }).join("");
+    const invoiceNumber = `INV-${order.id}`;
+    printDocument(`Invoice ${invoiceNumber}`, `
+      <header class="print-header">
+        <div><h1>Mirza Brothers</h1><p>Main GT Road, Dina</p><p>Phone: 03455675307</p></div>
+        <div class="print-meta"><h2>Invoice</h2><p>Invoice: ${escapeHtml(invoiceNumber)}</p><p>Order: ${escapeHtml(order.id)}</p><p>Date: ${formatDate(order.invoiceDate)}</p></div>
+      </header>
+      <p class="print-customer"><strong>Bill to:</strong> ${escapeHtml(order.customer)}</p>
+      <table class="print-table"><thead><tr><th>Item</th><th>Quantity</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
+      <section class="print-totals"><p>Subtotal <strong>PKR ${subtotal.toFixed(2)}</strong></p>${nextTaxAmount > 0 ? `<p>Tax <strong>PKR ${nextTaxAmount.toFixed(2)}</strong></p>` : ""}<p class="print-grand-total">Total <strong>PKR ${total.toFixed(2)}</strong></p></section>`);
+  }, "Save & print");
+}
+
 function openReturnModal() {
   if (!data.batches.length) {
     showToast("Receive stock and record a batch before logging a return.", true);
@@ -602,6 +685,8 @@ document.addEventListener("click", (event) => {
     case "new-return": openReturnModal(); break;
     case "review-return": openReturnReviewModal(actionTarget.dataset.id, actionTarget.dataset.decision); break;
     case "fulfill-order": fulfillOrder(actionTarget.dataset.id); break;
+    case "print-slip": printOrderSlip(actionTarget.dataset.id); break;
+    case "invoice": openInvoiceModal(actionTarget.dataset.id); break;
     case "export-report": exportReport(); break;
     case "close-modal": closeModal(); break;
     case "reset":
